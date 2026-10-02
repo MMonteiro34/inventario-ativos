@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+  <meta name="theme-color" content="#008542">
+  <title>Scanner Patrimonial</title>
+  <script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
+  <style>
+    *{box-sizing:border-box}body{margin:0;background:#07110c;color:#fff;font-family:Arial,Helvetica,sans-serif;min-height:100vh;display:flex;flex-direction:column}
+    header{height:64px;padding:0 18px;background:#008542;display:flex;align-items:center;justify-content:space-between;font-weight:800}
+    main{flex:1;display:flex;flex-direction:column;padding:16px;gap:14px}.camera{position:relative;flex:1;min-height:55vh;border-radius:20px;overflow:hidden;background:#000;border:1px solid rgba(255,255,255,.15)}
+    video{width:100%;height:100%;position:absolute;inset:0;object-fit:cover}.frame{position:absolute;left:8%;right:8%;top:32%;height:30%;border:2px solid #fff;border-radius:16px;box-shadow:0 0 0 9999px rgba(0,0,0,.32)}
+    .line{position:absolute;left:12%;right:12%;top:47%;height:2px;background:#25d366;box-shadow:0 0 12px #25d366}.hint{text-align:center;color:#d1fae5;font-size:14px}
+    .status{text-align:center;min-height:22px;font-size:13px;color:#cbd5e1}.actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}.btn{border:0;border-radius:13px;padding:14px;font-weight:800;font-size:15px}.primary{background:#008542;color:#fff}.secondary{background:#fff;color:#0f172a}
+    .manual{display:flex;gap:8px}.manual input{min-width:0;flex:1;border:0;border-radius:12px;padding:13px;font-size:16px}.manual button{border:0;border-radius:12px;padding:0 16px;background:#008542;color:#fff;font-weight:800}
+  </style>
+</head>
+<body>
+<header><span>Inventário de Ativos</span><span>Scanner</span></header>
+<main>
+  <div class="camera"><video id="video" autoplay playsinline muted></video><div class="frame"></div><div class="line"></div></div>
+  <div class="hint">Aponte a câmera traseira para o código de barras da etiqueta patrimonial.</div>
+  <div id="status" class="status">Iniciando câmera...</div>
+  <div class="manual"><input id="manual" inputmode="numeric" placeholder="Ou digite o patrimônio"><button onclick="usarManual()">Usar</button></div>
+  <div class="actions"><button class="btn secondary" onclick="voltar()">Cancelar</button><button class="btn primary" onclick="iniciar()">Reiniciar câmera</button></div>
+</main>
+<script>
+const params=new URLSearchParams(location.search);
+const RETURN_URL=params.get('return')||'';
+let reader=null,locked=false;
+function status(t){document.getElementById('status').textContent=t}
+function destino(codigo){
+  codigo=String(codigo||'').trim(); if(!codigo||locked)return;
+  if(!RETURN_URL){status('URL de retorno não recebida. Abra o scanner pelo aplicativo.');return}
+  locked=true; status('Patrimônio '+codigo+' lido. Retornando...');
+  try{if(reader)reader.reset()}catch(e){}
+  const sep=RETURN_URL.includes('?')?'&':'?';
+  location.replace(RETURN_URL+sep+'scan='+encodeURIComponent(codigo));
+}
+function usarManual(){destino(document.getElementById('manual').value)}
+function voltar(){if(RETURN_URL)location.replace(RETURN_URL);else history.back()}
+async function iniciar(){
+  locked=false;
+  if(!window.isSecureContext){status('A câmera exige HTTPS.');return}
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){status('Este navegador não disponibilizou acesso à câmera.');return}
+  try{
+    if(reader){try{reader.reset()}catch(e){}}
+    reader=new ZXing.BrowserMultiFormatReader();
+    status('Aguardando leitura...');
+    const devices=await ZXing.BrowserCodeReader.listVideoInputDevices();
+    const back=devices.find(d=>/back|rear|traseira|environment/i.test(d.label));
+    const id=back?back.deviceId:(devices.length?devices[devices.length-1].deviceId:undefined);
+    await reader.decodeFromVideoDevice(id,'video',(result,err)=>{if(result&&!locked)destino(result.getText())});
+  }catch(e){
+    const n=e&&e.name?e.name:'';
+    if(n==='NotAllowedError')status('Permissão da câmera negada. Libere a câmera para este site no Chrome.');
+    else if(n==='NotFoundError')status('Nenhuma câmera foi encontrada.');
+    else if(n==='NotReadableError')status('A câmera está sendo usada por outro aplicativo.');
+    else status('Erro ao abrir a câmera: '+(e&&e.message?e.message:String(e)));
+  }
+}
+document.getElementById('manual').addEventListener('keydown',e=>{if(e.key==='Enter')usarManual()});
+window.addEventListener('pagehide',()=>{try{if(reader)reader.reset()}catch(e){}});
+iniciar();
+</script>
+</body>
+</html>
